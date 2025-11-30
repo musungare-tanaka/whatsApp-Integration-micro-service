@@ -1,18 +1,18 @@
-FROM ubuntu:22.04
-LABEL authors="tanaka"
+# Stage 1: Build the application
+FROM maven:3.9-eclipse-temurin-21 AS builder
+WORKDIR /build
+COPY pom.xml .
+COPY src ./src
+RUN mvn clean package -DskipTests
 
-# Install Java runtime (minimal OpenJDK)
+# Stage 2: Run the application
+FROM ubuntu:22.04
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openjdk-21-jre-headless \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy your Java application
-COPY app.jar /app/app.jar
-
 WORKDIR /app
+COPY --from=builder /build/target/joinai-0.0.1-SNAPSHOT.jar app.jar
 
-# Expose port (change 8080 to your application's port)
 EXPOSE 8080
-
-# Run your Java application
 ENTRYPOINT ["java", "-jar", "app.jar"]
