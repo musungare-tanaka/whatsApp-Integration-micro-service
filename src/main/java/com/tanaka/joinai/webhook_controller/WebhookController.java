@@ -1,8 +1,10 @@
 package com.tanaka.joinai.webhook_controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tanaka.joinai.WhatsappService.WebhookService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -20,9 +22,19 @@ import java.util.Map;
 public class WebhookController {
 
     private static final Logger logger = LoggerFactory.getLogger(WebhookController.class);
+    private final WebhookService webhookService;
 
     @Value("${whatsapp.webhook.verify.token}")    private String verifyToken;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Value("${external.service-url}")
+    private String chatbot_microservice_url;
+
+    @Autowired
+    public WebhookController(WebhookService webhookService) {
+        this.webhookService = webhookService;
+    }
+
 
     /**
      * GET endpoint for webhook verification
@@ -124,7 +136,7 @@ public class WebhookController {
                                 logger.info("Extracted Message Body: {}", body);
 
                                 // Forward to microservice
-                                forwardIncomingMessage(from, body);
+                                webhookService.forwardIncomingMessage(from, body);
                             } else {
                                 logger.warn("Missing sender or body in message. From: {}, Body: {}", from, body);
                             }
@@ -148,22 +160,7 @@ public class WebhookController {
         }
     }
 
-    private void forwardIncomingMessage(String from, String message) {
-        try {
-            RestTemplate restTemplate = new RestTemplate();
 
-            Map<String, String> request = new HashMap<>();
-            request.put("from", from);
-            request.put("message", message);
-
-            String url = "http://localhost:8085/api/messages/incoming";
-            restTemplate.postForObject(url, request, String.class);
-
-            logger.info("Message forwarded to microservice successfully");
-        } catch (Exception e) {
-            logger.error("Failed to forward message to microservice", e);
-        }
-    }
 
 
 }

@@ -1,6 +1,7 @@
 package com.tanaka.joinai.webhook_controller;
 
 import com.tanaka.joinai.WhatsappService.WhatsAppService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -13,6 +14,7 @@ public class WhatsAppController {
 
     private final WhatsAppService whatsAppService;
 
+    @Autowired
     public WhatsAppController(WhatsAppService whatsAppService) {
         this.whatsAppService = whatsAppService;
     }
