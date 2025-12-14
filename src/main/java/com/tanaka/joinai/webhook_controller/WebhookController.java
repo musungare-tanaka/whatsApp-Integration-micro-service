@@ -2,18 +2,16 @@ package com.tanaka.joinai.webhook_controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tanaka.joinai.WhatsappService.WebhookService;
+import com.tanaka.joinai.dto.IncomingWhatsAppMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -22,23 +20,20 @@ import java.util.Map;
 public class WebhookController {
 
     private static final Logger logger = LoggerFactory.getLogger(WebhookController.class);
-    private final WebhookService webhookService;
 
-    @Value("${whatsapp.webhook.verify.token}")    private String verifyToken;
+    private final WebhookService webhookService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Value("${external.service-url}")
-    private String chatbot_microservice_url;
+    @Value("${whatsapp.webhook.verify.token}")
+    private String verifyToken;
 
-    @Autowired
     public WebhookController(WebhookService webhookService) {
         this.webhookService = webhookService;
     }
 
-
-    /**
-     * GET endpoint for webhook verification
-     */
+    // --------------------------------------------------
+    // WEBHOOK VERIFICATION
+    // --------------------------------------------------
     @GetMapping
     public ResponseEntity<String> verifyWebhook(
             @RequestParam(name = "hub.mode", required = false) String mode,
@@ -48,119 +43,133 @@ public class WebhookController {
         if ("subscribe".equals(mode) && verifyToken.equals(token)) {
             logger.info("WEBHOOK VERIFIED");
             return ResponseEntity.ok(challenge);
-        } else {
-            logger.warn("Webhook verification failed. Mode: {}, Token match: {}", mode, verifyToken.equals(token));
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
+        logger.warn("Webhook verification failed");
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
     }
 
-
-    /**
-     * */
+    // --------------------------------------------------
+    // WEBHOOK RECEIVER
+    // --------------------------------------------------
     @PostMapping
     public ResponseEntity<String> receiveWebhook(@RequestBody Map<String, Object> payload) {
+
         try {
             String timestamp = LocalDateTime.now()
                     .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
 
             logger.info("\n\nWebhook received {}\n", timestamp);
 
-            String prettyJson = objectMapper.writerWithDefaultPrettyPrinter()
-                    .writeValueAsString(payload);
-            logger.info(prettyJson);
+            logger.info(objectMapper
+                    .writerWithDefaultPrettyPrinter()
+                    .writeValueAsString(payload));
 
-            // ----------------------------------------
-            //  EXTRACT MESSAGE (TYPE-SAFE)
-            // ----------------------------------------
-            try {
-                Object entryObj = payload.get("entry");
-                if (!(entryObj instanceof List<?> entries)) {
-                    logger.warn("No valid entries in webhook payload");
-                    return ResponseEntity.ok("EVENT_RECEIVED");
-                }
+            Object entryObj = payload.get("entry");
+            if (!(entryObj instanceof List<?> entries) || entries.isEmpty()) {
+                return ResponseEntity.ok("EVENT_RECEIVED");
+            }
 
-                if (entries.isEmpty()) {
-                    logger.warn("Entries list is empty");
-                    return ResponseEntity.ok("EVENT_RECEIVED");
-                }
+            Object entry0 = entries.getFirst();
+            if (!(entry0 instanceof Map<?, ?> entry)) {
+                return ResponseEntity.ok("EVENT_RECEIVED");
+            }
 
-                Object firstEntry = entries.getFirst();
-                if (!(firstEntry instanceof Map<?, ?> entry)) {
-                    logger.warn("Entry is not a map");
-                    return ResponseEntity.ok("EVENT_RECEIVED");
-                }
+            Object changesObj = entry.get("changes");
+            if (!(changesObj instanceof List<?> changes) || changes.isEmpty()) {
+                return ResponseEntity.ok("EVENT_RECEIVED");
+            }
 
-                Object changesObj = entry.get("changes");
-                if (!(changesObj instanceof List<?> changes)) {
-                    logger.warn("No valid changes in entry");
-                    return ResponseEntity.ok("EVENT_RECEIVED");
-                }
+            Object change0 = changes.getFirst();
+            if (!(change0 instanceof Map<?, ?> change)) {
+                return ResponseEntity.ok("EVENT_RECEIVED");
+            }
 
-                if (changes.isEmpty()) {
-                    logger.warn("Changes list is empty");
-                    return ResponseEntity.ok("EVENT_RECEIVED");
-                }
+            Object valueObj = change.get("value");
+            if (!(valueObj instanceof Map<?, ?> value)) {
+                return ResponseEntity.ok("EVENT_RECEIVED");
+            }
 
-                Object firstChange = changes.getFirst();
-                if (!(firstChange instanceof Map<?, ?> change)) {
-                    logger.warn("Change is not a map");
-                    return ResponseEntity.ok("EVENT_RECEIVED");
-                }
+            Object messagesObj = value.get("messages");
+            if (!(messagesObj instanceof List<?> messages) || messages.isEmpty()) {
+                return ResponseEntity.ok("EVENT_RECEIVED");
+            }
 
-                Object valueObj = change.get("value");
-                if (!(valueObj instanceof Map<?, ?> value)) {
-                    logger.warn("Value is not a map");
-                    return ResponseEntity.ok("EVENT_RECEIVED");
-                }
+            Object messageObj = messages.getFirst();
+            if (!(messageObj instanceof Map<?, ?> message)) {
+                return ResponseEntity.ok("EVENT_RECEIVED");
+            }
 
-                // Check if this is a MESSAGE webhook (not a status update)
-                Object messagesObj = value.get("messages");
-                if (messagesObj instanceof List<?> messages) {
-                    if (!messages.isEmpty()) {
-                        Object firstMessage = messages.getFirst();
-                        if (firstMessage instanceof Map<?, ?> message) {
+            IncomingWhatsAppMessage incoming = extractIncomingMessage(message);
 
-                            Object fromObj = message.get("from");
-                            String from = fromObj instanceof String ? (String) fromObj : null;
-
-                            // Extract message body safely
-                            Object textObj = message.get("text");
-                            String body = null;
-                            if (textObj instanceof Map<?, ?> textMap) {
-                                Object bodyObj = textMap.get("body");
-                                body = bodyObj instanceof String ? (String) bodyObj : null;
-                            }
-
-                            if (from != null && body != null) {
-                                logger.info("Extracted Sender: {}", from);
-                                logger.info("Extracted Message Body: {}", body);
-
-                                // Forward to microservice
-                                webhookService.forwardIncomingMessage(from, body);
-                            } else {
-                                logger.warn("Missing sender or body in message. From: {}, Body: {}", from, body);
-                            }
-                        }
-                    }
-                } else if (value.get("statuses") instanceof List) {
-                    logger.debug("Received status update webhook (not a message)");
-                } else {
-                    logger.warn("Received webhook with unknown structure");
-                }
-
-            } catch (Exception extractErr) {
-                logger.error("Failed to extract incoming message", extractErr);
+            if (incoming != null) {
+                webhookService.handleIncomingMessage(incoming);
             }
 
             return ResponseEntity.ok("EVENT_RECEIVED");
 
         } catch (Exception e) {
-            logger.error("Error processing webhook", e);
+            logger.error("Error processing WhatsApp webhook", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 
+    // --------------------------------------------------
+    // MESSAGE EXTRACTION
+    // --------------------------------------------------
+    private IncomingWhatsAppMessage extractIncomingMessage(Map<?, ?> message) {
 
+        String from = message.get("from") instanceof String s ? s : null;
+        String messageId = message.get("id") instanceof String s ? s : null;
+        String timestamp = message.get("timestamp") instanceof String s ? s : null;
+        String type = message.get("type") instanceof String s ? s : null;
 
+        if (from == null || type == null) {
+            logger.warn("Missing required WhatsApp fields");
+            return null;
+        }
 
+        return switch (type) {
+
+            case "text" -> {
+                Map<?, ?> text = (Map<?, ?>) message.get("text");
+                String body = text != null && text.get("body") instanceof String s ? s : null;
+
+                yield new IncomingWhatsAppMessage(
+                        from, messageId, timestamp, type,
+                        body, null, null, null, null
+                );
+            }
+
+            case "audio" -> {
+                Map<?, ?> audio = (Map<?, ?>) message.get("audio");
+
+                yield new IncomingWhatsAppMessage(
+                        from, messageId, timestamp, type,
+                        null,
+                        audio.get("id") instanceof String s ? s : null,
+                        audio.get("mime_type") instanceof String s ? s : null,
+                        audio.get("url") instanceof String s ? s : null,
+                        audio.get("voice") instanceof Boolean b ? b : null
+                );
+            }
+
+            case "image", "video", "document" -> {
+                Map<?, ?> media = (Map<?, ?>) message.get(type);
+
+                yield new IncomingWhatsAppMessage(
+                        from, messageId, timestamp, type,
+                        null,
+                        media.get("id") instanceof String s ? s : null,
+                        media.get("mime_type") instanceof String s ? s : null,
+                        media.get("url") instanceof String s ? s : null,
+                        null
+                );
+            }
+
+            default -> {
+                logger.warn("Unsupported message type: {}", type);
+                yield null;
+            }
+        };
+    }
 }

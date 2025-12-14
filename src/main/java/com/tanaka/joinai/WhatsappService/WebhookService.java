@@ -1,39 +1,86 @@
 package com.tanaka.joinai.WhatsappService;
 
+import com.tanaka.joinai.dto.IncomingWhatsAppMessage;
 import com.tanaka.joinai.dto.WhatsAppRequestDTO;
-import com.tanaka.joinai.webhook_controller.WebhookController;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+
 import java.time.LocalDateTime;
 
 @Service
 public class WebhookService {
 
+    private static final Logger logger = LoggerFactory.getLogger(WebhookService.class);
+
     @Value("${external.service-url}")
-    private String chatbot_microservice_url;
+    private String chatbotMicroserviceUrl;
 
-    private static final Logger logger = LoggerFactory.getLogger(WebhookController.class);
+    private final RestTemplate restTemplate = new RestTemplate();
 
+    // --------------------------------------------------
+    // MAIN ROUTER
+    // --------------------------------------------------
+    public void handleIncomingMessage(IncomingWhatsAppMessage msg) {
 
-    // to send whatsapp message to the chatbot micro-service
-    public void forwardIncomingMessage(String from, String message) {
+        logger.info("Incoming WhatsApp message | from={} | type={}",
+                msg.from(), msg.type());
 
-        WhatsAppRequestDTO whatsAppRequestDTO = new WhatsAppRequestDTO();
-        whatsAppRequestDTO.setMessage(message);
-        whatsAppRequestDTO.setTimestamp(String.valueOf(LocalDateTime.now()));
-        whatsAppRequestDTO.setPhoneNumber(from);
+        switch (msg.type()) {
+            case "text" -> forwardText(msg);
+            case "audio" -> forwardAudio(msg);
+            default -> logger.info("Message type {} not supported yet", msg.type());
+        }
+    }
+
+    // --------------------------------------------------
+    // TEXT → CHATBOT
+    // --------------------------------------------------
+    private void forwardText(IncomingWhatsAppMessage msg) {
+
+        WhatsAppRequestDTO dto = new WhatsAppRequestDTO();
+        dto.setPhoneNumber(msg.from());
+        dto.setMessage(msg.text());
+        dto.setMessageId(msg.messageId());
+        dto.setTimestamp(msg.timestamp());
+
+        sendToChatbot(dto);
+    }
+
+    // --------------------------------------------------
+    // AUDIO → CHATBOT (NO TRANSCRIPTION YET)
+    // --------------------------------------------------
+    private void forwardAudio(IncomingWhatsAppMessage msg) {
+
+        WhatsAppRequestDTO dto = new WhatsAppRequestDTO();
+        dto.setPhoneNumber(msg.from());
+        dto.setMessage("[VOICE_NOTE]");
+        dto.setMessageId(msg.messageId());
+        dto.setTimestamp(msg.timestamp());
+        dto.setMediaUrl(msg.mediaUrl());
+        dto.setMediaType(msg.mimeType());
+
+        sendToChatbot(dto);
+    }
+
+    // --------------------------------------------------
+    // COMMON SENDER
+    // --------------------------------------------------
+    public void sendToChatbot(WhatsAppRequestDTO dto) {
+
         try {
-            RestTemplate restTemplate = new RestTemplate();
+            restTemplate.postForObject(
+                    chatbotMicroserviceUrl + "/message",
+                    dto,
+                    String.class
+            );
 
-            String url = chatbot_microservice_url + "message";
-            restTemplate.postForObject(url, whatsAppRequestDTO, String.class);
+            logger.info("Message forwarded to chatbot | phone={}", dto.getPhoneNumber());
 
-            logger.info("Message forwarded to microservice successfully");
         } catch (Exception e) {
-            logger.error("Failed to forward message to microservice", e);
+            logger.error("Failed to forward message to chatbot", e);
         }
     }
 }
