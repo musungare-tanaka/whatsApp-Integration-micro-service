@@ -47,8 +47,6 @@ public class WhatsAppController {
 
     @PostMapping("/reply")
     public ResponseEntity<String> sendMessage(@RequestBody WhatsAppResponseDTO whatsAppResponseDTO){
-        System.out.println("Chatbot message received");
-        System.out.println("AI response :" + whatsAppResponseDTO.getResponseText());
         return ResponseEntity.ok(whatsAppService.sendCustomTextMessage(whatsAppResponseDTO.getRecipientPhone(), whatsAppResponseDTO.getResponseText()));
     }
 }

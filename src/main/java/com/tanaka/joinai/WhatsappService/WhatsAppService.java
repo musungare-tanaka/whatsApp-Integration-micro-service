@@ -58,9 +58,7 @@ public class WhatsAppService {
      * Send a custom text message (not a template)
      */
     public String sendCustomTextMessage(String toNumber, String messageText) {
-        System.out.println("DEBUG messageText = [" + messageText + "]");
 
-        System.out.println("Sending custom message to: " + toNumber);
 
         String url = "https://graph.facebook.com/v22.0/" + phoneNumberId + "/messages";
 
@@ -69,15 +67,15 @@ public class WhatsAppService {
         body.put("messaging_product", "whatsapp");
         body.put("recipient_type", "individual");
         body.put("to", toNumber);
-        body.put("type", "text");  // Changed from "template" to "text"
+        body.put("type", "text");
 
-        // Add text content
+        // Adding text content
         Map<String, String> text = new HashMap<>();
         text.put("preview_url", "false");
         text.put("body", messageText);  // Your custom message here
         body.put("text", text);
 
-        // Set headers
+        // Settting headers
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setBearerAuth(whatsappToken);
