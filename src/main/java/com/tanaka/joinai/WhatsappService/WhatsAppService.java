@@ -1,16 +1,21 @@
 package com.tanaka.joinai.WhatsappService;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.web.util.UriUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
 @Service
 public class WhatsAppService {
+
+    private static final Logger logger = LoggerFactory.getLogger(WhatsAppService.class);
 
     @Value("${twilio.account-sid}")
     private String accountSid;
@@ -37,16 +42,18 @@ public class WhatsAppService {
         String normalizedTo = normalizeToWhatsAppAddress(toNumber);
         String normalizedFrom = normalizeFromAddress(fromAddress);
         String url = buildTwilioMessagesUrl();
+        logger.info("Sending Twilio WhatsApp message | to={} | from={}", normalizedTo, normalizedFrom);
 
-        String formBody = "To=" + urlEncode(normalizedTo)
-                + "&From=" + urlEncode(normalizedFrom)
-                + "&Body=" + urlEncode(messageText != null ? messageText : "");
+        MultiValueMap<String, String> formBody = new LinkedMultiValueMap<>();
+        formBody.add("To", normalizedTo);
+        formBody.add("From", normalizedFrom);
+        formBody.add("Body", messageText != null ? messageText : "");
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
         headers.set("Authorization", "Basic " + basicAuth(accountSid, authToken));
 
-        HttpEntity<String> request = new HttpEntity<>(formBody, headers);
+        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(formBody, headers);
 
         try {
             ResponseEntity<String> response =
@@ -115,9 +122,5 @@ public class WhatsAppService {
     private String basicAuth(String username, String password) {
         String raw = username + ":" + password;
         return Base64.getEncoder().encodeToString(raw.getBytes(StandardCharsets.UTF_8));
-    }
-
-    private String urlEncode(String value) {
-        return UriUtils.encodeQueryParam(value, StandardCharsets.UTF_8);
     }
 }
