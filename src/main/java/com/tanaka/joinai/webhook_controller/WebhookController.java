@@ -242,8 +242,15 @@ public class WebhookController {
             return from;
         }
         String normalized = from.trim();
-        if (normalized.startsWith("whatsapp:")) {
-            normalized = normalized.substring("whatsapp:".length());
+        if (normalized.regionMatches(true, 0, "whatsapp:", 0, "whatsapp:".length())) {
+            normalized = normalized.substring("whatsapp:".length()).trim();
+        }
+        normalized = normalized.replaceAll("[\\s\\-()]", "");
+        if (normalized.startsWith("00")) {
+            normalized = "+" + normalized.substring(2);
+        }
+        if (!normalized.startsWith("+")) {
+            normalized = "+" + normalized;
         }
         return normalized;
     }

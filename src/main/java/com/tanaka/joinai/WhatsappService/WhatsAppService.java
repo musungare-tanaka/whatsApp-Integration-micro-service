@@ -69,31 +69,47 @@ public class WhatsAppService {
         if (rawFrom == null || rawFrom.isBlank()) {
             throw new IllegalStateException("twilio.whatsapp-from is required");
         }
-        String candidate = rawFrom.trim();
-        if (candidate.startsWith("whatsapp:")) {
-            return candidate;
-        }
-        if (candidate.startsWith("+")) {
-            return "whatsapp:" + candidate;
-        }
-        return "whatsapp:+" + candidate;
+        return normalizeWhatsAppAddress(rawFrom, "From");
     }
 
     private String normalizeToWhatsAppAddress(String rawTo) {
         if (rawTo == null || rawTo.isBlank()) {
             throw new IllegalArgumentException("Recipient phone number is required");
         }
-        String candidate = rawTo.trim();
-        if (candidate.startsWith("whatsapp:")) {
-            return candidate;
+        return normalizeWhatsAppAddress(rawTo, "To");
+    }
+
+    private String normalizeWhatsAppAddress(String rawValue, String label) {
+        String candidate = rawValue.trim();
+
+        if (candidate.regionMatches(true, 0, "whatsapp:", 0, "whatsapp:".length())) {
+            candidate = candidate.substring("whatsapp:".length()).trim();
         }
-        if (candidate.startsWith("+")) {
-            return "whatsapp:" + candidate;
-        }
+
+        // Remove common separators users/services may include.
+        candidate = candidate.replaceAll("[\\s\\-()]", "");
+
+        // Convert 00-prefixed numbers to E.164 plus notation.
         if (candidate.startsWith("00")) {
-            return "whatsapp:+" + candidate.substring(2);
+            candidate = "+" + candidate.substring(2);
         }
-        return "whatsapp:+" + candidate;
+
+        if (!candidate.startsWith("+")) {
+            candidate = "+" + candidate;
+        }
+
+        // Keep only digits after the leading plus.
+        String digits = candidate.substring(1).replaceAll("\\D", "");
+        if (digits.isBlank()) {
+            throw new IllegalArgumentException(label + " phone number is invalid: " + rawValue);
+        }
+
+        // E.164 allows up to 15 digits, minimum practical value kept at 8.
+        if (digits.length() < 8 || digits.length() > 15) {
+            throw new IllegalArgumentException(label + " phone number is not valid E.164 length: " + rawValue);
+        }
+
+        return "whatsapp:+" + digits;
     }
 
     private String basicAuth(String username, String password) {
