@@ -8,8 +8,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
-import java.time.LocalDateTime;
-
 @Service
 public class WebhookService {
 
@@ -71,16 +69,28 @@ public class WebhookService {
     public void sendToChatbot(WhatsAppRequestDTO dto) {
 
         try {
+            String targetUrl = chatbotMessageUrl();
             restTemplate.postForObject(
-                    chatbotMicroserviceUrl + "/message",
+                    targetUrl,
                     dto,
                     String.class
             );
 
-            logger.info("Message forwarded to chatbot | phone={}", dto.getPhoneNumber());
+            logger.info("Message forwarded to chatbot | phone={} | target={}", dto.getPhoneNumber(), targetUrl);
 
         } catch (Exception e) {
             logger.error("Failed to forward message to chatbot", e);
         }
+    }
+
+    private String chatbotMessageUrl() {
+        String raw = chatbotMicroserviceUrl == null ? "" : chatbotMicroserviceUrl.trim();
+        if (raw.endsWith("/message")) {
+            return raw;
+        }
+        if (raw.endsWith("/")) {
+            return raw + "message";
+        }
+        return raw + "/message";
     }
 }

@@ -6,9 +6,11 @@ import com.tanaka.joinai.dto.IncomingWhatsAppMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.util.MultiValueMap;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -51,7 +53,7 @@ public class WebhookController {
     // --------------------------------------------------
     // WEBHOOK RECEIVER
     // --------------------------------------------------
-    @PostMapping
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> receiveWebhook(@RequestBody Map<String, Object> payload) {
 
         try {
@@ -114,6 +116,68 @@ public class WebhookController {
     }
 
     // --------------------------------------------------
+    // TWILIO WEBHOOK RECEIVER
+    // --------------------------------------------------
+    @PostMapping(consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    public ResponseEntity<String> receiveTwilioWebhook(@RequestParam MultiValueMap<String, String> formData) {
+        try {
+            String from = formData.getFirst("From");
+            String body = formData.getFirst("Body");
+            String messageSid = formData.getFirst("MessageSid");
+            String rawNumMedia = formData.getFirst("NumMedia");
+
+            int numMedia = 0;
+            if (rawNumMedia != null && !rawNumMedia.isBlank()) {
+                try {
+                    numMedia = Integer.parseInt(rawNumMedia);
+                } catch (NumberFormatException ignored) {
+                    numMedia = 0;
+                }
+            }
+
+            String normalizedFrom = normalizeTwilioFrom(from);
+            String timestamp = String.valueOf(System.currentTimeMillis());
+
+            IncomingWhatsAppMessage incoming;
+            if (numMedia > 0) {
+                incoming = new IncomingWhatsAppMessage(
+                        normalizedFrom,
+                        messageSid,
+                        timestamp,
+                        "audio",
+                        null,
+                        formData.getFirst("MediaSid0"),
+                        formData.getFirst("MediaContentType0"),
+                        formData.getFirst("MediaUrl0"),
+                        null
+                );
+            } else {
+                incoming = new IncomingWhatsAppMessage(
+                        normalizedFrom,
+                        messageSid,
+                        timestamp,
+                        "text",
+                        body,
+                        null,
+                        null,
+                        null,
+                        null
+                );
+            }
+
+            webhookService.handleIncomingMessage(incoming);
+
+            // Twilio accepts an empty TwiML response.
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_XML)
+                    .body("<Response></Response>");
+        } catch (Exception e) {
+            logger.error("Error processing Twilio webhook", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    // --------------------------------------------------
     // MESSAGE EXTRACTION
     // --------------------------------------------------
     private IncomingWhatsAppMessage extractIncomingMessage(Map<?, ?> message) {
@@ -171,5 +235,16 @@ public class WebhookController {
                 yield null;
             }
         };
+    }
+
+    private String normalizeTwilioFrom(String from) {
+        if (from == null || from.isBlank()) {
+            return from;
+        }
+        String normalized = from.trim();
+        if (normalized.startsWith("whatsapp:")) {
+            normalized = normalized.substring("whatsapp:".length());
+        }
+        return normalized;
     }
 }
